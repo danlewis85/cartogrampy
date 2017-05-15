@@ -47,7 +47,7 @@ def propsymbols(gdf, value_field, geom_field='geometry', symbol='circle', scale_
     if position.lower() in ['centroid']:
         cents = gdf[geom_field].apply(
             lambda x: [x.centroid.x, x.centroid.y]).tolist()
-    elif position.lower() == ['center', 'centre']:
+    elif position.lower() in ['center', 'centre']:
         cents = gdf[geom_field].envelope.apply(
             lambda x: [x.centroid.x, x.centroid.y]).tolist()
     elif position.lower() in ['representative point', 'rep']:
