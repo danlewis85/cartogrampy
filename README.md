@@ -1,2 +1,2 @@
-# Cartograms_GeoPandas
+# cartogrampy
 Cartogram and related algorithms for GeoPandas
