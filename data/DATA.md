@@ -1,6 +1,6 @@
 # Example data used in cartogrampy
 
-## Greater London
+## Greater London, UK
 Geometry: https://data.london.gov.uk/dataset/statistical-gis-boundary-files-london  
 London Boroughs shapefile converted to GeoJSON using GeoPandas.  
 Population: https://data.london.gov.uk/dataset/office-national-statistics-ons-population-estimates-borough
