@@ -118,7 +118,7 @@ def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = '
                         try:
                             overlap = abs(overlap) * Wp[row[id_field]][nrow[id_field]]/perimeter[row[id_field]]
                         except KeyError:
-                            gap = 0.0
+                            overlap = 0.0
                         xattract = xattract + overlap * (nrow[geom_field].centroid.x - row[geom_field].centroid.x) / dist
                         yattract = yattract + overlap * (nrow[geom_field].centroid.y - row[geom_field].centroid.y) / dist
 
