@@ -30,7 +30,7 @@ def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
         new_weights[i] = [a.intersection(polygons[j]).length for j in rook.neighbors[i]]
     return W(rook.neighbors,new_weights)
 
-def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = 'geometry',
+def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = 'geometry', position = 'centroid',
                      ratio = 0.4,friction = 0.25,iterations = 99,verbose=True):
     
     """Returns a Dorling cartogram for a given GeoPandas GeoDataFrame as a new GeoDataFrame.
@@ -40,6 +40,11 @@ def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = '
         value_field: Field name of values to be used to produce Dorling cartogram.
         id_field (str, optional): Field name of values uniquely identifying rows in geodataframe, defaults to None.
         geom_field (str, optional): Field name of geometry column in input GeoDataFrame, defaults to 'geometry'.
+        position (str, optional): Center position of proportional symbols, defaults to centroid.
+            'centroid' - GeoDataFrame centroid property, shape centroid.
+            'center' - Centroid of GeoDataFrame envelope (bounding box) property, envelope centroid.
+            'representative point' - Point returned by GeoDataFrame representative point method, guarenteed to be inside polygon.
+            <field_name> - Field name in geodataframe that contains shapely Point() objects to use as centers.
         ratio (float, optional): Ratio by which to combine repulsion and attraction forces, default = 0.4
         friction (float, optional): Relaxation factor for forces, default = 0.25
         iterations (int, optional): Number of iteration fo the algorithm to perform. Default of 99 is arbitrary.
@@ -55,11 +60,19 @@ def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = '
     
     # Copy the required data from the input geodataframe.
     if id_field:
-        df = geodataframe[[id_field,value_field,geom_field]].copy()
+        if position in geodataframe.columns.values:
+            df = geodataframe[[id_field,value_field,geom_field,position]].copy()
+        else:
+            df = geodataframe[[id_field,value_field,geom_field]].copy()
     else:
-        df = geodataframe[[value_field,geom_field]].copy()
-        df['id_field'] = df.index
-        id_field = 'id_field'
+        if position in geodataframe.columns.values:
+            df = geodataframe[[value_field,geom_field,position]].copy()
+            df['id_field'] = df.index
+            id_field = 'id_field'
+        else:
+            df = geodataframe[[value_field,geom_field]].copy()
+            df['id_field'] = df.index
+            id_field = 'id_field'
     
     # Get lengths of shared borders.
     Wp = borders_from_dataframe(df, id_field, geom_field)
@@ -67,8 +80,21 @@ def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = '
     # Get dictionary of perimeters
     perimeter = df.set_index(id_field)[geom_field].length.to_dict()
     
-    # Now convert df to geodataframe of centroids
-    df = GeoDataFrame(df,geometry=df[geom_field].centroid)
+    # Now convert df to geodataframe of centers according to pos.
+    if position in df.columns.values:
+        try:
+            df = GeoDataFrame(df,geometry=df[position])
+        except:
+            pass	
+    elif position.lower() == 'centroid':
+        df = GeoDataFrame(df,geometry=df[geom_field].centroid)
+    elif position.lower() in ['center','centre']:
+        df = GeoDataFrame(df,geometry=df[geom_field].envelope.centroid)
+    elif position.lower() in ['representative point', 'rep']:
+        df = GeoDataFrame(df,geometry=df[geom_field].representative_point())
+    else:
+        print("Did not recognize position argument, using centroid")
+        df = GeoDataFrame(df,geometry=df[geom_field].centroid)
     
     # Work out scale and radii - seems inefficient to deal with the geometries in this way.
     # No idea how to write this is a PEP8 compliant way.
