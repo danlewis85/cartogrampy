@@ -1,6 +1,6 @@
-from __future__ import division, print_function
-# Copyright. 2017. Daniel Lewis, Federica Bianco.
-# https://github.com/danlewis85/cartogrampy/blob/master/LICENSE
+from matplotlib.patches import Circle, RegularPolygon, Rectangle, Polygon
+from matplotlib.collections import PatchCollection
+from numpy import power, sin, tan, cos, pi
 
 def propsymbols(gdf, value_field, geom_field='geometry', symbol='circle', scale_factor=10, position='centroid',
                  edgecolors='k', facecolors='b', alpha=0.5):
@@ -39,9 +39,6 @@ def propsymbols(gdf, value_field, geom_field='geometry', symbol='circle', scale_
 
     # Required matplotlib and numpy classes/functions for patch and collection
     # creation.
-    from matplotlib.patches import Circle, RegularPolygon, Rectangle, Polygon
-    from matplotlib.collections import PatchCollection
-    from numpy import power, sin, tan, cos, pi
 
     # Calculate proportional symbol positions based on
     if position.lower() in ['centroid']:

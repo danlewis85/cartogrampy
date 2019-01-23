@@ -1,7 +1,11 @@
-from __future__ import division, print_function
-# Copyright. 2017. Daniel Lewis.
-# https://github.com/danlewis85/cartogrampy/blob/master/LICENSE
-
+# imports
+from pysal.weights.Contiguity import Rook, W
+from shapely.geometry import asShape
+from geopandas import GeoDataFrame
+from pandas import DataFrame
+from numpy import sum, pi, power
+from shapely.affinity import translate
+    
 def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
         
     """Returns a PySAL weights object in which weights are lengths of shared border.
@@ -17,10 +21,6 @@ def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
         
     # Function to compute neighbors and length of shared borders
     # Based on: https://github.com/volaya/processing_pysal/blob/master/ext-libs/pysal/contrib/shared_perimeter_weights.py
-        
-    # imports
-    from pysal.weights.Contiguity import Rook, W
-    from shapely.geometry import asShape
 
     rook = Rook.from_dataframe(df,idVariable=idVariable)
     polygons = df.set_index(idVariable)[geom_field].apply(lambda x: asShape(x)).to_dict()
@@ -53,11 +53,6 @@ def dorling_cartogram(geodataframe, value_field, id_field = None, geom_field = '
     Returns:
         GeoPandas GeoDataFrame.
     """
-    from geopandas import GeoDataFrame
-    from pandas import DataFrame
-    from numpy import sum, pi, power
-    from shapely.affinity import translate
-    
     # Copy the required data from the input geodataframe.
     if id_field:
         if position in geodataframe.columns.values:
