@@ -12,6 +12,7 @@ pysal = "*"
 pandas = "*"
 matplotlib = "*"
 Shapely = "*"
+xlrd = "*"
 
 [requires]
 python_version = "3.7"
