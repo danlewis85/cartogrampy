@@ -1,4 +1,8 @@
-from __future__ import print_function, division
+# imports
+from numpy import mean, pi, power, maximum, minimum, array, concatenate, lexsort, any, str, argsort, searchsorted, split, take
+from numpy.linalg import norm
+from shapely.geometry import Polygon
+from geopandas import GeoDataFrame
 
 def dcn_cartogram(geodataframe,value_field,id_field=None,geom_field='geometry',iterations=99,verbose=True):
     
@@ -15,12 +19,6 @@ def dcn_cartogram(geodataframe,value_field,id_field=None,geom_field='geometry',i
     Returns:
         GeoPandas GeoDataFrame.
     """
-
-    # imports
-    from numpy import mean, pi, power, maximum, minimum, array, concatenate, lexsort, any, str, argsort, searchsorted, split, take
-    from numpy.linalg import norm
-    from shapely.geometry import Polygon
-    from geopandas import GeoDataFrame
 
     if id_field:
         gdf = geodataframe[[geom_field,value_field,id_field]].copy()

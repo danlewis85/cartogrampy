@@ -1,0 +1,8 @@
+numpy
+shapely
+geopandas
+pysal
+pandas
+matplotlib
+
+xlrd

@@ -1,4 +1,7 @@
-from __future__ import division, print_function
+from numpy import power
+from shapely.affinity import scale
+from geopandas import GeoDataFrame
+    
 # Copyright. 2017. Daniel Lewis.
 # https://github.com/danlewis85/cartogrampy/blob/master/LICENSE
 
@@ -22,10 +25,6 @@ def noncontiguous_cartogram(geodataframe, value_field, id_field = None, geom_fie
     Returns:
         GeoPandas GeoDataFrame
     """
-    from numpy import power
-    from shapely.affinity import scale
-    from geopandas import GeoDataFrame
-    
     # Make a copy of the geodataframe containing only the relevant fields.
     if id_field:
         gdf = geodataframe[[value_field,id_field,geom_field]].copy()
