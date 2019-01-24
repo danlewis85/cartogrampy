@@ -13,6 +13,7 @@ pandas = "*"
 matplotlib = "*"
 Shapely = "*"
 xlrd = "*"
+jupyter = "*"
 
 [requires]
 python_version = "3.7"
