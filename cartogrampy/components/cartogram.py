@@ -1,17 +1,13 @@
-from pysal.weights.Contiguity import Rook, W
-from numpy import mean, pi, power, maximum, minimum, array, concatenate, lexsort, any, argsort, searchsorted, split, take
 import numpy as np
 from numpy.linalg import norm
-from shapely.geometry import Polygon
 from geopandas import GeoDataFrame
 import pandas as pd 
-from shapely.geometry import asShape
+from shapely.geometry import asShape, Polygon
 from pysal.weights.Contiguity import Rook, W
-from shapely.geometry import asShape
 from geopandas import GeoDataFrame
-from pandas import DataFrame
-from numpy import sum, pi, power
-from shapely.affinity import translate
+from numpy import mean, sum, pi, power, maximum, minimum, array, concatenate, lexsort, any, argsort, searchsorted, split, take
+from shapely.affinity import scale, translate
+
 def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
 
     """Returns a PySAL weights object in which weights are lengths of shared border.
@@ -50,12 +46,58 @@ class Cartogram:
         self.geom_field  = geom_field
         
         
-    def noncont(self, 
+    def noncont(self,
               position='centroid',
               anchor_rank=1,
               anchor_id=None):
-        pass
-        
+
+        # make copy of the geodataframe containing only the relevant fields
+        if self.id_field:
+            gdf = self.gdf[[self.value_field, self.self.id_field, self.geom_field]].copy()
+        else:
+            gdf = self.gdf[[self.value_field, self.geom_field]].copy()
+
+        # calculate geometry positions based on
+        if position.lower() in ['centroid']:
+            gdf['cent'] = gdf[self.geom_field].centroid
+        elif position.lower() in ['center', 'centre']:
+            gdf['cent'] = gdf[self.geom_field].envelope.centroid
+        elif position.lower() in ['representative point', 'rep']:
+            gdf['cent'] = gdf[self.geom_field].representative_point()
+        else:
+           # if position parameter not recognised, default the centroid
+           print('position parameter invalid, using centroid.')
+           gdf['cent'] = gdf[self.geom_field].centroid
+
+        # work out the value densities and ranks
+        gdf['density'] = gdf[self.value_field]/gdf.area
+        gdf['rank'] = gdf['density'].rank(axis=0, method='first', ascending=False)
+
+        # get appropriate anchor depending on whether anchor_id or anchor_rank  have been specified
+        if anchor_id:
+            if self.id_field:
+                if anchord_id in gdf[self.id_field].values:
+                    anchor = gdf[gdf[self.id_field] == anchor_id]['density'].values[0]
+                else:
+                    print("anchor_id not recognised in self.id_field, defaulting to anchor_rank = 1")
+                    anchor = gdf[gdf['rank'] == 1]['density'].values[0]
+            else:
+                print("self.id_field not specified, for anchord_id, defaulting to anchor_rank = 1")
+                anchor = gdf[gdf['rank'] == 1]['density'].values[0]
+        else:
+            anchor = gdf[gdf['rank'] == anchor_rank]['density'].values[0]
+
+        # work out the scaling for each polygon
+        gdf['scale'] = (1.0/power(anchor, 0.5)) * power(gdf[self.value_field]/gdf.area,0.5)
+
+        # NB affine transformations are linear
+        new_geom = [scale(g[1][self.geom_field], xfact=g[1]['scale'], yfact=g[1]['scale'],origin=g[1]['cent']) for g in gdf.iterrows()]
+
+        # clean up
+        del gdf['density'], gdf['rank'], gdf['cent']
+
+        return GeoDataFrame(gdf, geometry=new_geom)
+
     def dorling(self,
               position='centroid',
               ratio=0.4,
@@ -195,7 +237,7 @@ class Cartogram:
             if verbose:
                 print("iter: ",i," displacement: ", displacement)
 
-        df = df.merge(DataFrame(radius.items(), columns=[id_field, 'Radius']),on = id_field)
+        df = df.merge(pd.DataFrame(radius.items(), columns=[id_field, 'Radius']),on = id_field)
         return GeoDataFrame(df,geometry=[df.loc[b,'geometry'].buffer(df.loc[b,'Radius']) for b in range(len(df))])
 
     def dcn(self,
