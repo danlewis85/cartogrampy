@@ -14,6 +14,7 @@ matplotlib = "*"
 Shapely = "*"
 xlrd = "*"
 jupyter = "*"
+descartes = "*"
 
 [requires]
 python_version = "3.7"
