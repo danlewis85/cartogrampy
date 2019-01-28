@@ -15,7 +15,8 @@ Shapely = "*"
 xlrd = "*"
 jupyter = "*"
 descartes = "*"
-pyqt5 = "*"
+PyQt5 = "*"
+shared = {path = "."}
 
 [requires]
 python_version = "3.7"
