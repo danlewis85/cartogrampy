@@ -17,6 +17,7 @@ jupyter = "*"
 descartes = "*"
 PyQt5 = "*"
 shared = {path = "."}
+cartogrampy = {editable = true,path = "."}
 
 [requires]
 python_version = "3.7"
