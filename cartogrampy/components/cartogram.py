@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
-from numpy.linalg import norm
-from pysal.weights.Contiguity import Rook, W
+from scipy.spatial.distance import cdist
+#from pysal.weights.Contiguity import Rook, W
 from shapely.geometry import asShape, Polygon
 from shapely.affinity import scale, translate
+from functools import partial
 
 def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
 
@@ -31,11 +32,50 @@ def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
         new_weights[i] = [a.intersection(polygons[j]).length for j in rook.neighbors[i]]
     return W(rook.neighbors,new_weights)
 
+def _separate(row, geom_field):
+    """Helper function for _multi2single.
+    
+    Args:
+        row (pd.Series): row objects from dataframe
+        geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
+        
+    Returns
+        Pandas DataFrame
+    """
+    df = pd.concat([gpd.GeoDataFrame(row).T] * len(row[geom_field]),ignore_index = True)
+    df[geom_field] = row[geom_field]
+    return df
+
+def _multi2single(gdf, geom_field = 'geometry'):
+    
+    """Returns a GeoDataFrame in which multipart features are broken into singlepart features.
+    
+    Args:
+        gdf (geopandas.geodataframe.gpd.GeoDataFrame): Input GeoDataFrame.
+        geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
+        
+    Returns
+        Geopandas GeoDataFrame
+    
+    """
+    # split rows into single and multipart features
+    gdf_single = gdf[gdf[geom_field].type == 'Polygon']
+    gdf_multi = gdf[gdf[geom_field].type == 'MultiPolygon']
+    # Apply function to separate multipolygons
+    partial_sep = partial(_separate,  geom_field = 'geometry')
+    sep = gdf_multi.apply(partial_sep, axis=1).tolist()
+    sep.append(gdf_single)
+    # Join all singlepart features together
+    out = pd.concat(sep).reset_index(drop = True)
+    #assign crs
+    out.crs = gdf.crs
+    return out
+
 class Cartogram:
     def __init__(self,
                gdf,
                value_field,
-               id_field   = None,
+               id_field = None,
                geom_field = 'geometry'):
        
         # dataframe and column descriptors
@@ -243,125 +283,116 @@ class Cartogram:
           iterations=99,
           verbose=True):
         
-        #+TODO: see if this can be generalised in a method
-        #+TODO: copy instead of view
-        # set out the dataframe
-        gdf = self.gdf[[self.geom_field,
-                        self.value_field]].copy()
-        #+TODO: Note that we might as well keep the index insted of creating a new id field
-        if self.id_field: 
-            id_field = self.id_field
-            gdf[id_field] = self.gdf[id_field]
+        # IF id field is specified get a copy of the geodataframe with just the id, geometry and value fields.
+        if self.id_field:
+            geodf = self.gdf[[self.geom_field,self.value_field,self.id_field]].copy()
+            reset_id = False
+        # If not, set the id field to be the row index
         else:
-            id_field = 'id_field'
-            gdf[id_field] = gdf.index
-        
-        # compute sum of value_field
-        total_val = gdf[self.value_field].sum()
-       
-        # main loop
-        for i in range(iterations):
-            # calculate current stats for gdf
-            # total area
-            total_area = gdf[self.geom_field].area.sum() 
-            # desired areas relative to total area of current iteration
-            desired_area = total_area * (gdf[self.value_field]/total_val)
-            # circular radius for each geometry as a function of area of current iteration
-            radius = np.power(gdf[self.geom_field].area/np.pi, 0.5)
-            # mass as difference in desired and actuall radii
-            mass = np.power(desired_area/np.pi, 0.5) - radius
-            # ratio of desired to current area as an error rate 
-            size_error = np.maximum(gdf[self.geom_field].area,
-                                  desired_area) / np.minimum(
-                                      gdf[self.geom_field].area, desired_area)
-            # work out force reduction factor based on mean error 
-            force_reduction = 1.0 / (1.0 + np.mean(size_error))
-            # create centroids for convenience. need to be multi-polygon centroids
-            centroids = gdf[self.geom_field].centroid
+            geodf = self.gdf[[self.value_field,self.geom_field]].copy()
+            geodf['id_field'] = self.gdf.index
+            self.id_field = 'id_field'
+            reset_id = True
             
-            # if multipolygons exist convert to polygons
+        # compute sum of value_field and store
+        totalValue = geodf[self.value_field].sum()
+        
+        # Main loop for iterations.
+        for i in range(iterations):
+            
+            # Total area of all geometries for current iteration
+            totalArea = geodf.area.sum()
+            
+            # Now prepare the geodataframes - ensure singlepart polygons and deduplicate geometry points.
             multi = False
-            #+TODO: Might be worth just seperating out the fields. Keeping them in a df
-            # rather than just column variables just adds text
-            if gdf[gdf[self.geom_field].type == 'MultiPolygon'][self.geom_field].any():
-                data = {col:[] for col in gdf.columns if col != self.geom_field}
-               
-                
-                # now iterate over gdf to get data and geometry rows
-                geom = []
-                for idx,row in gdf.iterrows():
-                    if row[self.geom_field].type == 'Polygon':
-                        for col in data.keys():
-                            data[col].append(row[col])
-                        geom.append(row[self.geom_field])
-                    elif row[self.geom_field].type == 'MultiPolygon':
-                        for g in row[self.geom_field]:
-                            for col in data.keys():
-                                data[col].append(row[col])
-                            geom.append(g)
-                    else:
-                        print("Geometry Error")
-                    
-                # reset gdf to the singlepart feature geodataframe
-                gdf = gpd.GeoDataFrame(data,geometry = geom)
-                # flag that the geometry in question is originally multipart.
+            if any(geodf.geom_type == 'MultiPolygon'):
+                geodf = _multi2single(geodf,self.geom_field)
                 multi = True
             
-            # deduplicate geometry points
-            # create a series of numpy arrays of boundary points
-            pnts = gdf[self.geom_field].apply(lambda x: np.array(x.exterior))
-          
+            if multi:
+                # Dissolve singlepart back to multipart
+                dissolve = geodf.dissolve(by = self.id_field,as_index=False)
+                # Desired areas relative to total area of current iteration.
+                desired = totalArea * (dissolve[self.value_field]/totalValue)
+                # Circular radius for each geometry as a function of area of current iteration
+                radius = (dissolve.area/np.pi).pow(0.5)
+                # Mass as difference in desired and actual radii 
+                mass = (desired/np.pi).pow(0.5) - radius
+                # Ratio of desired to current area as an error rate.
+                sizeError = np.maximum(dissolve.area,desired)/np.minimum(dissolve.area,desired)
+                # Work out force reduction factor based on mean error.
+                forceReductionFactor = 1.0 / (1.0 + sizeError.mean())
+                # Create centroids for convenience. Need to be multi-polygon centroids if multipolygon.
+                centroids = dissolve.centroid
+                
+            else:
+                # Desired areas relative to total area of current iteration.
+                desired = totalArea * (geodf[self.value_field]/totalValue)
+                # Circular radius for each geometry as a function of area of current iteration
+                radius = (geodf.area/np.pi).pow(0.5)
+                # Mass as difference in desired and actual radii 
+                mass = (desired/np.pi).pow(0.5) - radius
+                # Ratio of desired to current area as an error rate.
+                sizeError = np.maximum(geodf.area,desired)/np.minimum(geodf.area,desired)
+                # Work out force reduction factor based on mean error.
+                forceReductionFactor = 1.0 / (1.0 + sizeError.mean())
+                # Create centroids for convenience. Need to be multi-polygon centroids if multipolygon.
+                centroids = geodf.centroid
             
+            # Now that we have singlepart features, deduplicate geometry points.
+            # Get polygon coords as Series of numpy arrays
+            pnts = geodf.exterior.map(np.array)
             # create a lookup based on count of points per polygon
-            cnts = pnts.apply(lambda x: len(x))
-
+            cnts = pnts.map(len)
             # Concatenate all points into a single long list of points.
-            pnts = np.concatenate(np.array(pnts))
-
-            # Calculate unique points in full dataset.
-            # From: http://stackoverflow.com/questions/16970982/find-unique-rows-in-numpy-array
+            pnts = np.concatenate(pnts.values)
+            # Get indices of sorted points
             ind = np.lexsort(pnts.T)
+            # Get unique points by comparing sorted array of points
             upnts = pnts[ind[np.concatenate(([True],np.any(pnts[ind[1:]]!=pnts[ind[:-1]],axis=1)))]]
-
-            # This creates an id lookup for pnts to upnts.
-            # It creates string views of the data, which is WAY quicker to deal with that 2d arrays.
-            # Using http://stackoverflow.com/questions/32191029/getting-the-indices-of-several-elements-in-a-numpy-array-at-once
-            a = pd.Series(pnts.ravel()).astype(str)
-            b = pd.Series(upnts.ravel()).astype(str)
+            
+            # Make the arrays into structured arrays for index lookup creation
+            a = pnts.ravel().view([('x',np.float64),('y',np.float64)])
+            b = upnts.ravel().view([('x',np.float64),('y',np.float64)])
             sorter = np.argsort(b)
             idv = sorter[np.searchsorted(b, a, sorter=sorter)]
-
-            # This is the main algorithm, and the bit that really takes the time.
-            points = []
-            for xy in upnts:
-                x = x0 = xy[0]
-                y = y0 = xy[1]
-                idx = 0
-                for cxy in centroids.apply(lambda x: [x.x,x.y]):
-                    dist = norm(np.array(cxy)-np.array([x,y]))
-                    if dist > radius[idx]:
-                        fij = mass[idx] * radius[idx] / dist
-                    else:
-                        xf = dist / radius[idx]
-                        fij = mass[idx] * (np.power(xf,2)) * (4 - (3 * xf))
-                    fij = fij * force_reduction / dist
-
-                    x = (x0 - cxy[0]) * fij + x
-                    y = (y0 - cxy[1]) * fij + y
-                    idx +=1
-                points.append([x,y])
-            points = np.array(points)
+            
+            centxy = centroids.map(np.array)
+            upnts0 = upnts.copy()
+            for idx, cxy in enumerate(centxy):
+                # make distance vector
+                dist = cdist(upnts,cxy.reshape((1,2)))
+                # create boolean filter
+                mask = dist > radius[idx]
+                colmask = np.full((mask.shape[0], 1), False)
+                # update if dist > radius
+                x_mask = np.column_stack((mask,colmask))
+                y_mask = np.column_stack((colmask,mask))
+                upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[x_mask]
+                upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[y_mask]
+                # update if dist <= radius
+                x_mask = np.column_stack((~mask,colmask))
+                y_mask = np.column_stack((colmask,~mask))
+                upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[x_mask]
+                upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[y_mask]
+            
             # Reconstruct the full points list from the unique points using take and the index list.
             # Remake the array - split by counts lookup.
             # NB without the -1 index you get a 0 length array at the end.
-            repnts = np.split(np.take(points,idv,axis=0),cnts.cumsum())[:-1]
+            repnts = np.split(np.take(upnts,idv,axis=0),cnts.cumsum())[:-1]
             new_geom = [Polygon(p) for p in repnts]
-            gdf = gpd.GeoDataFrame(gdf[[self.value_field,id_field]],geometry=new_geom)
-
+            geodf = gpd.GeoDataFrame(geodf[[self.value_field,self.id_field]],geometry=new_geom)
+            
             if multi:
                 # Dissolve back to original multipart polygon.
-                gdf = gdf.dissolve(by = id_field,as_index=False)
+                geodf = geodf.dissolve(by = self.id_field,as_index=False)
             if verbose:
-                print("iteration:", i+1, "Mean Error:", np.mean(np.maximum(gdf[self.geom_field].area,Desired)/np.minimum(gdf[self.geom_field].area,desired_area)),"Max Error:",max(np.maximum(gdf[self.geom_field].area,desired_area)/np.minimum(gdf[self.geom_field].area,desired_area)))
+                mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
+                max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
+                print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
+		
+        if reset_id:
+            self.id_field = None	
 
-        return gdf
+        return geodf
+        
