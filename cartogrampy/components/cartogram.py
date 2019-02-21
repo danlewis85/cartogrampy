@@ -364,21 +364,19 @@ class Cartogram:
             upnts0 = upnts.copy()
 
             def _process(changed,
-                        original,
-                        c,
-                        dist,
-                        mask,
-                        idx,
-                        cxy,
-                        dim=0):
+                         original,
+                         c1,c2,c3,
+                         mask,
+                         cxy,
+                         dim=0):
+                """
+                abstraction to process the different dimension within the
+                next loop
+                """
+                diff = original[:, dim] - cxy[dim]
 
-                # maths
-                a = original[:, dim] - cxy[dim]
-                b = mass[idx] * radius[idx] / dist
-                d = dist/radius[idx]
-                e = mass[idx] * d**2 * (4 - (3 * d))
-                pos = a * (b * c) + changed[:, dim]
-                neg = a * (e * c) + changed[:, dim]
+                calc = lambda const: diff * (const * c1) + changed[:, dim]
+                pos, neg  = calc(c2), calc(c3)
 
                 changed[:,dim] = np.where(mask, pos, neg)
 
@@ -387,15 +385,20 @@ class Cartogram:
             for idx, cxy in enumerate(centxy):
                 # make distance vector
                 dist = cdist(upnts,cxy.reshape((1,2)))[:,0]
+
                 # create boolean filter
                 mask = dist > radius[idx]
 
-                # constants
-                fcr = forceReductionFactor / dist
+                # constants that don't need to be done in _process
+                # but depend on the loop
+                c1 = forceReductionFactor / dist
+                c2 = mass[idx] * radius[idx] / dist
+                c_ = dist/radius[idx]
+                c3 = mass[idx] * c_**2 * (4 - (3 * c_))
 
                 # prefil a function
-                upnts = _process(upnts, upnts0, fcr, dist, mask, idx, cxy, dim=0)
-                upnts = _process(upnts, upnts0, fcr, dist, mask, idx, cxy, dim=1)
+                upnts = _process(upnts, upnts0, c1, c2, c3, mask, cxy, dim=0)
+                upnts = _process(upnts, upnts0, c1, c2, c3, mask, cxy, dim=1)
 
             # # # Reconstruct the full points list from the unique points using take and the index list.
             # # Remake the array - split by counts lookup.
