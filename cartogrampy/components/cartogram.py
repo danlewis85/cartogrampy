@@ -287,7 +287,7 @@ class Cartogram:
         
         # If id field is specified get a copy of the geodataframe with just the id,
         # geometry and value fields.
-        #+TODO: this seems abstractable -> do it in init.
+        # TODO: this seems abstractable -> do it in init.
         if self.id_field:
             geodf = self.gdf[[self.geom_field, self.value_field, self.id_field]].copy()
             reset_id = False
@@ -329,7 +329,7 @@ class Cartogram:
             # Total area of all geometries for current iteration
             totalArea = geodf.area.sum()
 
-            #+TODO: make sure this is inside the function bellow.
+            # TODO: make sure this is inside the function bellow.
             if self.multi:
                 # Now prepare the geodataframes - ensure singlepart polygons and
                 # deduplicate geometry points.
@@ -342,7 +342,7 @@ class Cartogram:
              forceReductionFactor,
              centroids) = _calc_factors(geodf)
 
-            #+TODO: Sort this out in terms of dataframes if possible.
+            # TODO: Sort this out in terms of dataframes if possible.
             # Now that we have singlepart features, deduplicate geometry points.
             # Get polygon coords as Series of numpy arrays
             pnts = geodf.exterior.map(np.array)
@@ -414,8 +414,8 @@ class Cartogram:
                 # Dissolve back to original multipart polygon.
                 geodf = geodf.dissolve(by = self.id_field,as_index=False)
 
-            #+TODO: sort out this mess. good start though.
-            #+TODO: use f strings
+            # TODO: sort out this mess. good start though.
+            # TODO: use f strings
             if verbose:
                 mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
                 max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
