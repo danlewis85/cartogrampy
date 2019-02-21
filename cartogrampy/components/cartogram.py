@@ -32,44 +32,6 @@ def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
         new_weights[i] = [a.intersection(polygons[j]).length for j in rook.neighbors[i]]
     return W(rook.neighbors,new_weights)
 
-def _separate(row, geom_field):
-    """Helper function for _multi2single.
-    
-    Args:
-        row (pd.Series): row objects from dataframe
-        geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
-        
-    Returns
-        Pandas DataFrame
-    """
-    df = pd.concat([gpd.GeoDataFrame(row).T] * len(row[geom_field]),ignore_index = True)
-    df[geom_field] = row[geom_field]
-    return df
-
-def _multi2single(gdf, geom_field = 'geometry'):
-    
-    """Returns a GeoDataFrame in which multipart features are broken into singlepart features.
-    
-    Args:
-        gdf (geopandas.geodataframe.gpd.GeoDataFrame): Input GeoDataFrame.
-        geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
-        
-    Returns
-        Geopandas GeoDataFrame
-    
-    """
-    # split rows into single and multipart features
-    gdf_single = gdf[gdf[geom_field].type == 'Polygon']
-    gdf_multi = gdf[gdf[geom_field].type == 'MultiPolygon']
-    # Apply function to separate multipolygons
-    partial_sep = partial(_separate,  geom_field = 'geometry')
-    sep = gdf_multi.apply(partial_sep, axis=1).tolist()
-    sep.append(gdf_single)
-    # Join all singlepart features together
-    out = pd.concat(sep).reset_index(drop = True)
-    #assign crs
-    out.crs = gdf.crs
-    return out
 
 
 class Cartogram:
@@ -94,12 +56,38 @@ class Cartogram:
         self.geom_field  = geom_field
 
         self.multi = any(gdf.geom_type == "MultiPolygon")
-        
+
+    @classmethod
+    def multi2single(self, gdf, geom_field = 'geometry'):
+
+        """Returns a GeoDataFrame in which multipart features are broken into singlepart features.
+
+        Args:
+            gdf (geopandas.geodataframe.gpd.GeoDataFrame): Input GeoDataFrame.
+            geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
+
+        Returns
+            Geopandas GeoDataFrame
+
+        """
+        # split rows into single and multipart features
+        gdf_single = gdf[gdf[geom_field].type == 'Polygon']
+        gdf_multi = gdf[gdf[geom_field].type == 'MultiPolygon']
+        # Apply function to separate multipolygons
+        partial_sep = partial(self.__separate, geom_field = 'geometry')
+        sep = gdf_multi.apply(partial_sep, axis=1).tolist()
+        sep.append(gdf_single)
+        # Join all singlepart features together
+        out = pd.concat(sep).reset_index(drop = True)
+        # assign crs
+        out.crs = gdf.crs
+        return out
+
     def noncont(self,
               position='centroid',
               anchor_rank=1,
               anchor_id=None):
-
+        # NOTE: BROKEN
         # make copy of the geodataframe containing only the relevant fields
         if self.id_field:
             gdf = self.gdf[[self.value_field, self.self.id_field, self.geom_field]].copy()
@@ -153,7 +141,7 @@ class Cartogram:
               friction=0.25,
               iterations=99,
               verbose=True):
-
+        # NOTE: BROKEN
         if self.id_field:
             if position in self.gdf.columns.values:
                 df = self.gdf[[self.id_field,
@@ -333,7 +321,7 @@ class Cartogram:
             if self.multi:
                 # Now prepare the geodataframes - ensure singlepart polygons and
                 # deduplicate geometry points.
-                geodf = _multi2single(geodf, self.geom_field)
+                geodf = self.multi2single(geodf, self.geom_field)
 
             (radius,
              desired,
@@ -422,3 +410,17 @@ class Cartogram:
                 print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
 
         return geodf
+    @staticmethod
+    def __separate(row, geom_field):
+        """Helper function for _multi2single.
+
+        Args:
+            row (pd.Series): row objects from dataframe
+            geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
+
+        Returns
+            Pandas DataFrame
+        """
+        df = pd.concat([gpd.GeoDataFrame(row).T] * len(row[geom_field]),ignore_index = True)
+        df[geom_field] = row[geom_field]
+        return df
