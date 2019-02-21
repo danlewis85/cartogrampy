@@ -350,30 +350,30 @@ class Cartogram:
             cnts = pnts.map(len)
 
             # concatenate all points into a single long list of points.
-            pnts  = pd.DataFrame(np.concatenate(pnts.values), columns=["x","y"])
+            pnts = pd.DataFrame(np.concatenate(pnts.values), columns=["x","y"])
             upnts = pnts.drop_duplicates()
-            upnts.to_clipboard()
+
             adjusted = upnts.copy()
 
             centxy = centroids.map(np.array)
             for idx, cxy in enumerate(centxy):
                 # make distance vector
-                dist = cdist(upnts,cxy.reshape((1,2)))
+                dist = cdist(adjusted,cxy.reshape((1,2)))[:,0]
                 # create boolean filter
-                mask = (dist > radius[idx])[:,0]
+                mask = dist > radius[idx]
                 #+TODO: the two dimensional shape of dist is propagating making it unclean, reshape
                 def _process(mask, cent, col, idx):
                     a = col
                     b = a - cent
-                    c = (mass[idx] * radius[idx] / dist)[:,0]
-                    d = (forceReductionFactor / dist)[:,0]
-                    e = (dist/radius[idx])[:,0]
+                    c = mass[idx] * radius[idx] / dist
+                    d = forceReductionFactor / dist
+                    e = dist/radius[idx]
                     pos = b * (c * d) + a
                     neg = b * ((mass[idx] * (e**2) * (4 - (3 * e))) * d) + a
                     return np.where(mask, pos, neg)
                 #+TODO: why run twice? maybe use apply?
-                # adjusted["x"] =  _process(mask, cxy[0], adjusted["x"], idx)
-                # adjusted["y"] =  _process(mask, cxy[1], adjusted["y"], idx)
+                adjusted["x"] =  _process(mask, cxy[0], adjusted["x"], idx)
+                adjusted["y"] =  _process(mask, cxy[1], adjusted["y"], idx)
 
             # reconstruct the full points list from the unique points
             repnts = pd.merge(
@@ -383,6 +383,7 @@ class Cartogram:
                 right_on = [upnts["x"], upnts["y"]],
                 suffixes = ("_drop", "")
             )[["x","y"]].values
+            #+TODO:results dubious
 
             # remake the array - split by counts lookup.
             # nb without the -1 index you get a 0 length array at the end.
