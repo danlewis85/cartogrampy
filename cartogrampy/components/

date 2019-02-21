@@ -342,11 +342,13 @@ class Cartogram:
              forceReductionFactor,
              centroids) = _calc_factors(geodf)
 
-  # Now that we have singlepart features, deduplicate geometry points.
+            # Now that we have singlepart features, deduplicate geometry points.
             # Get polygon coords as Series of numpy arrays
             pnts = geodf.exterior.map(np.array)
+
             # create a lookup based on count of points per polygon
             cnts = pnts.map(len)
+
             # Concatenate all points into a single long list of points.
             pnts = np.concatenate(pnts.values)
             # Get indices of sorted points
@@ -364,37 +366,52 @@ class Cartogram:
             upnts0 = upnts.copy()
             for idx, cxy in enumerate(centxy):
                 # make distance vector
-                dist = cdist(upnts,cxy.reshape((1,2)))
+                dist = cdist(upnts,cxy.reshape((1,2)))[:,0]
                 # create boolean filter
                 mask = dist > radius[idx]
-                colmask = np.full((mask.shape[0], 1), False)
-                # update if dist > radius
-                x_mask = np.column_stack((mask,colmask))
-                y_mask = np.column_stack((colmask,mask))
-                upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[x_mask]
-                upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[y_mask]
-                # update if dist <= radius
-                x_mask = np.column_stack((~mask,colmask))
-                y_mask = np.column_stack((colmask,~mask))
-                upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[x_mask]
-                upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[y_mask]
+
+                def apply_factors(arr, dim=0):
+
+                    a = arr[:,dim]
+                    b = a - cxy[dim]
+                    c = mass[idx] * radius[idx] / dist
+                    d = forceReductionFactor / dist
+                    e = dist/radius[idx]
+
+                    pos = b * (c * d) + a
+                    neg = b * ((mass[idx] * e**2 * (4 - (3 * e))) * d) + a
+
+                    return np.where(mask, pos, neg)
+
+                upnts[:,0] = apply_factors(upnts0))
+                # colmask = np.full((mask.shape[0], 1), False)
+                # # update if dist > radius
+                # x_mask = np.column_stack((mask,colmask))
+                # y_mask = np.column_stack((colmask,mask))
+                # upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[x_mask]
+                # upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * radius[idx] / dist[mask]) * forceReductionFactor / dist[mask]) + upnts[y_mask]
+                # # update if dist <= radius
+                # x_mask = np.column_stack((~mask,colmask))
+                # y_mask = np.column_stack((colmask,~mask))
+                # upnts[x_mask] = (upnts0[x_mask] - cxy[0]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[x_mask]
+                # upnts[y_mask] = (upnts0[y_mask] - cxy[1]) * ((mass[idx] * (dist[~mask]/radius[idx])**2 * (4 - (3 * (dist[~mask]/radius[idx])))) * forceReductionFactor / dist[~mask]) + upnts[y_mask]
 
             # Reconstruct the full points list from the unique points using take and the index list.
             # Remake the array - split by counts lookup.
             # NB without the -1 index you get a 0 length array at the end.
-            repnts = np.split(np.take(upnts,idv,axis=0),cnts.cumsum())[:-1]
-            new_geom = [Polygon(p) for p in repnts]
-            geodf = gpd.GeoDataFrame(geodf[[self.value_field,self.id_field]],geometry=new_geom)
+        #     repnts = np.split(np.take(upnts,idv,axis=0),cnts.cumsum())[:-1]
+        #     new_geom = [Polygon(p) for p in repnts]
+        #     geodf = gpd.GeoDataFrame(geodf[[self.value_field,self.id_field]],geometry=new_geom)
 
-            if self.multi:
-                # Dissolve back to original multipart polygon.
-                geodf = geodf.dissolve(by = self.id_field,as_index=False)
-            if verbose:
-                mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
-                max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
-                print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
+        #     if self.multi:
+        #         # Dissolve back to original multipart polygon.
+        #         geodf = geodf.dissolve(by = self.id_field,as_index=False)
+        #     if verbose:
+        #         mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
+        #         max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
+        #         print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
 
-        if reset_id:
-            self.id_field = None
+        # if reset_id:
+        #     self.id_field = None
 
-        return geodf
+        # return geodf
