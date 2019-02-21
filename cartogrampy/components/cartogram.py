@@ -342,6 +342,7 @@ class Cartogram:
              forceReductionFactor,
              centroids) = _calc_factors(geodf)
 
+            #+TODO: Sort this out in terms of dataframes if possible.
             # Now that we have singlepart features, deduplicate geometry points.
             # Get polygon coords as Series of numpy arrays
             pnts = geodf.exterior.map(np.array)
@@ -389,8 +390,10 @@ class Cartogram:
                 # create boolean filter
                 mask = dist > radius[idx]
 
+                # maths
                 # constants that don't need to be done in _process
                 # but depend on the loop
+                # real meat and potatoes of the algorithm
                 c1 = forceReductionFactor / dist
                 c2 = mass[idx] * radius[idx] / dist
                 c_ = dist/radius[idx]
@@ -400,9 +403,9 @@ class Cartogram:
                 upnts = _process(upnts, upnts0, c1, c2, c3, mask, cxy, dim=0)
                 upnts = _process(upnts, upnts0, c1, c2, c3, mask, cxy, dim=1)
 
-            # # # Reconstruct the full points list from the unique points using take and the index list.
-            # # Remake the array - split by counts lookup.
-            # # NB without the -1 index you get a 0 length array at the end.
+            # Reconstruct the full points list from the unique points using take and the index list.
+            # Remake the array - split by counts lookup.
+            # NB without the -1 index you get a 0 length array at the end.
             repnts = np.split(np.take(upnts,idv,axis=0),cnts.cumsum())[:-1]
             new_geom = [Polygon(p) for p in repnts]
             geodf = gpd.GeoDataFrame(geodf[[self.value_field,self.id_field]],geometry=new_geom)
@@ -410,6 +413,9 @@ class Cartogram:
             if self.multi:
                 # Dissolve back to original multipart polygon.
                 geodf = geodf.dissolve(by = self.id_field,as_index=False)
+
+            #+TODO: sort out this mess. good start though.
+            #+TODO: use f strings
             if verbose:
                 mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
                 max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
