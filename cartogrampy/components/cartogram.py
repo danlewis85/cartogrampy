@@ -83,9 +83,17 @@ class Cartogram:
         self.gdf         = gdf
         self.value_field = value_field
         self.id_field    = id_field
+       
+        # TODO: make index of frame id column if one exists
+        # TODO: use the index for any id needs -> not filling in new cols 
+        # create an id_field
+        if not id_field:
+            self.gdf["id_field"] = self.gdf.index
+            self.id_field = "id_field"
+            
         self.geom_field  = geom_field
 
-        self.multi       = any(gdf.geom_type == "MultiPolygon")
+        self.multi = any(gdf.geom_type == "MultiPolygon")
         
     def noncont(self,
               position='centroid',
@@ -287,21 +295,13 @@ class Cartogram:
         
         # If id field is specified get a copy of the geodataframe with just the id,
         # geometry and value fields.
-        # TODO: this seems abstractable -> do it in init.
-        if self.id_field:
-            geodf = self.gdf[[self.geom_field, self.value_field, self.id_field]].copy()
-            reset_id = False
-        # If not, set the id field to be the row index
-        else:
-            geodf = self.gdf[[self.value_field, self.geom_field]].copy()
-            geodf["id_field"] = self.gdf.index
-            self.id_field = "id_field"
-            reset_id = True
+        geodf = self.gdf[[self.geom_field, self.value_field, self.id_field]].copy()
 
         # compute sum of value_field and store
         totalValue = geodf[self.value_field].sum()
 
         def _calc_factors(frame):
+
             if self.multi:
                 # Dissolve singlepart back to multipart
                 frame = frame.dissolve(by=self.id_field, as_index=False)
@@ -329,7 +329,7 @@ class Cartogram:
             # Total area of all geometries for current iteration
             totalArea = geodf.area.sum()
 
-            # TODO: make sure this is inside the function bellow.
+            # TODO: make sure this is inside the function below.
             if self.multi:
                 # Now prepare the geodataframes - ensure singlepart polygons and
                 # deduplicate geometry points.
@@ -420,8 +420,5 @@ class Cartogram:
                 mean_error = np.mean(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
                 max_error = max(np.maximum(geodf[self.geom_field].area,desired)/np.minimum(geodf[self.geom_field].area,desired))
                 print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
-
-        if reset_id:
-            self.id_field = None
 
         return geodf

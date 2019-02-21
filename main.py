@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use("qt5agg")
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
-from cartogrampy.components.cartogram import Cartogram
+# from cartogrampy.components.cartogram import Cartogram
 
 # ldn_boro = gpd.read_file('data/LDN_Boro.geojson').to_crs(epsg=27700)
 # ldn_pop  = pd.read_excel('data/Pandas_Lon_Pop.xlsx')
@@ -28,15 +28,15 @@ state_pop = pd.read_excel('data/Pandas_US_Pop.xlsx')
 usstate = usstate.merge(state_pop, how='left', left_on='STUSPS', right_on='Code')
 
 c = Cartogram(usstate, value_field=2016)
-dcn = c.dcn(30)
+dcn = c.dcn(50)
 
 # Map the outcome of dcn
-# fig, ax = plt.subplots(1,2,figsize=(16,8))
-# usstate.plot(column = 2016,cmap = 'PuRd', legend=True, ax=ax[0])
-# dcn.plot(color='r',ax=ax[1])
-# ax[0].axis('equal')
-# ax[1].axis('equal')
-# plt.show()
+fig, ax = plt.subplots(1,2,figsize=(16,8))
+usstate.plot(column = 2016,cmap = 'PuRd', legend=True, ax=ax[0])
+dcn.plot(color='r',ax=ax[1])
+ax[0].axis('equal')
+ax[1].axis('equal')
+plt.show()
 
 # Map the outcome of dorling
 # fig, ax = plt.subplots(1,2,figsize=(16,8))
