@@ -9,7 +9,7 @@ Cartogram and related algorithms for GeoPandas based geometries
 ### Using Pip
 
 ```sh
-pip install git+ssh://git@github.com/datasciencecampus/readpyne.git@master
+pip install git+ssh://git@github.com/danlewis85/cartogrampy.git@master
 ```
 
 ### Note:
