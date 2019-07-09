@@ -3,36 +3,64 @@ import pandas as pd
 import geopandas as gpd
 
 from scipy.spatial.distance import cdist
-#from pysal.weights.Contiguity import Rook, W
-from shapely.geometry import asShape, Polygon
+from pysal.lib.weights.contiguity import Rook, W
+from shapely.geometry import Polygon
 from shapely.affinity import scale, translate
 from functools import partial
 
-def borders_from_dataframe(df, idVariable=None,geom_field = 'geometry'):
-
-    """Returns a PySAL weights object in which weights are lengths of shared border.
-
+def borders_from_dataframe(gdf, idVariable = None, geom_field = 'geometry'):
+    """Returns a pairwise pandas DataFrame of neighbouring zones with length of shared border as the weight.
+    
     Args:
-        df (geopandas.geodataframe.gpd.GeoDataFrame): Input GeoDataFrame.
-        idVariance (optional): Field name of values uniquely identifying rows in geodataframe, defaults to None.
+        gdf (gpd.GeoDataFrame): geoPandas geodataframe of zones.
+        idVariable (optional): Column name of id variable, index used by default.
         geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
-
-    Returns:
-        PySAL W weights object.
+        
+    Returns
+        Pandas DataFrame
     """
+    rook = Rook.from_dataframe(gdf, idVariable = idVariable)
+    if idVariable:
+        gdf = gdf.set_index(idVariable)
+        weights = {idx: [gdf.loc[idx,geom_field].intersection(gdf.loc[nid,geom_field]).length 
+                         for nid in neighbours] 
+                   for idx, neighbours in rook.neighbors.items()}
+    else:
+        weights = {idx: [gdf.loc[idx,geom_field].intersection(gdf.loc[nid,geom_field]).length 
+                         for nid in neighbours] 
+                   for idx, neighbours in rook.neighbors.items()}
+    return W(rook.neighbors,weights).to_adjlist()
 
-    # Function to compute neighbors and length of shared borders
-    # Based on: https://github.com/volaya/processing_pysal/blob/master/ext-libs/pysal/contrib/shared_perimeter_weights.py
+def paired_distances(X, Y):
+    """Pairwise distances for two arrays of coordinates
+    
+    Args:
+        X: numpy array (n,2)
+        Y: numpy array (n,2)
+    
+    Returns
+        numpy array (n,1)
+    """
+    Z = X - Y
+    norms = np.einsum('ij,ij->i', Z, Z)
+    return np.sqrt(norms, norms)
 
-    rook = Rook.from_dataframe(df,idVariable=idVariable)
-    polygons = df.set_index(idVariable)[geom_field].apply(lambda x: asShape(x)).to_dict()
-    new_weights = {}
-    for i in rook.neighbors:
-        a = polygons[i]
-        new_weights[i] = [a.intersection(polygons[j]).length for j in rook.neighbors[i]]
-    return W(rook.neighbors,new_weights)
-
-
+def repel(x, row, xrepel, yrepel):
+    if x['dist'] > 1.0:
+        xrepel -= x['overlap'] * (x['geometry'].x - row['geometry'].x) / x['dist']
+        yrepel -= x['overlap'] * (x['geometry'].y - row['geometry'].y) / x['dist']
+    
+    return (xrepel, yrepel)
+        
+def attract(x, idx, Wp, row, perimeter, xattract, yattract):
+   
+    if sum((Wp['focal'] == idx) & (Wp['neighbor'] == x.name)) == 1:
+        x['overlap'] = abs(x['overlap']) * float(Wp[(Wp['focal'] == idx) & (Wp['neighbor'] == x.name)]['weight']) / perimeter[idx]
+    
+    xattract += x['overlap'] * (x['geometry'].x - row['geometry'].x) / x['dist']
+    yattract += x['overlap'] * (x['geometry'].y - row['geometry'].y) / x['dist']
+    
+    return (xattract, yattract)
 
 class Cartogram:
     def __init__(self,
@@ -45,18 +73,12 @@ class Cartogram:
         self.gdf         = gdf
         self.value_field = value_field
         self.id_field    = id_field
-       
-        # TODO: make index of frame id column if one exists
-        # TODO: use the index for any id needs -> not filling in new cols 
-        # create an id_field
         if not id_field:
             self.gdf["id_field"] = self.gdf.index
             self.id_field = "id_field"
-            
         self.geom_field  = geom_field
-
         self.multi = any(gdf.geom_type == "MultiPolygon")
-
+        
     @classmethod
     def multi2single(self, gdf, geom_field = 'geometry'):
 
@@ -82,58 +104,56 @@ class Cartogram:
         # assign crs
         out.crs = gdf.crs
         return out
-
+        
     def noncont(self,
               position='centroid',
               anchor_rank=1,
               anchor_id=None):
-        # NOTE: BROKEN
+
         # make copy of the geodataframe containing only the relevant fields
-        if self.id_field:
-            gdf = self.gdf[[self.value_field, self.self.id_field, self.geom_field]].copy()
-        else:
-            gdf = self.gdf[[self.value_field, self.geom_field]].copy()
+
+        geodf = self.gdf[[self.value_field, self.id_field, self.geom_field]].copy()
 
         # calculate geometry positions based on
         if position.lower() in ['centroid']:
-            gdf['cent'] = gdf[self.geom_field].centroid
+            geodf['cent'] = geodf[self.geom_field].centroid
         elif position.lower() in ['center', 'centre']:
-            gdf['cent'] = gdf[self.geom_field].envelope.centroid
+            geodf['cent'] = geodf[self.geom_field].envelope.centroid
         elif position.lower() in ['representative point', 'rep']:
-            gdf['cent'] = gdf[self.geom_field].representative_point()
+            geodf['cent'] = geodf[self.geom_field].representative_point()
         else:
            # if position parameter not recognised, default the centroid
            print('position parameter invalid, using centroid.')
-           gdf['cent'] = gdf[self.geom_field].centroid
+           geodf['cent'] = geodf[self.geom_field].centroid
 
         # work out the value densities and ranks
-        gdf['density'] = gdf[self.value_field]/gdf.area
-        gdf['rank'] = gdf['density'].rank(axis=0, method='first', ascending=False)
+        geodf['density'] = geodf[self.value_field]/geodf.area
+        geodf['rank'] = geodf['density'].rank(axis=0, method='first', ascending=False)
 
         # get appropriate anchor depending on whether anchor_id or anchor_rank  have been specified
         if anchor_id:
             if self.id_field:
-                if anchord_id in gdf[self.id_field].values:
-                    anchor = gdf[gdf[self.id_field] == anchor_id]['density'].values[0]
+                if anchor_id in geodf[self.id_field].values:
+                    anchor = geodf[geodf[self.id_field] == anchor_id]['density'].values[0]
                 else:
                     print("anchor_id not recognised in self.id_field, defaulting to anchor_rank = 1")
-                    anchor = gdf[gdf['rank'] == 1]['density'].values[0]
+                    anchor = geodf[geodf['rank'] == 1]['density'].values[0]
             else:
                 print("self.id_field not specified, for anchord_id, defaulting to anchor_rank = 1")
-                anchor = gdf[gdf['rank'] == 1]['density'].values[0]
+                anchor = geodf[geodf['rank'] == 1]['density'].values[0]
         else:
-            anchor = gdf[gdf['rank'] == anchor_rank]['density'].values[0]
+            anchor = geodf[geodf['rank'] == anchor_rank]['density'].values[0]
 
         # work out the scaling for each polygon
-        gdf['scale'] = (1.0/np.power(anchor, 0.5)) * np.power(gdf[self.value_field]/gdf.area,0.5)
+        geodf['scale'] = (1.0/np.power(anchor, 0.5)) * np.power(geodf[self.value_field]/geodf.area,0.5)
 
         # NB affine transformations are linear
-        new_geom = [scale(g[1][self.geom_field], xfact=g[1]['scale'], yfact=g[1]['scale'],origin=g[1]['cent']) for g in gdf.iterrows()]
+        new_geom = [scale(g[1][self.geom_field], xfact=g[1]['scale'], yfact=g[1]['scale'],origin=g[1]['cent']) for g in geodf.iterrows()]
 
         # clean up
-        del gdf['density'], gdf['rank'], gdf['cent']
+        del geodf['density'], geodf['rank'], geodf['cent']
 
-        return gpd.GeoDataFrame(gdf, geometry=new_geom)
+        return gpd.GeoDataFrame(geodf, geometry=new_geom)
 
     def dorling(self,
               position='centroid',
@@ -141,116 +161,72 @@ class Cartogram:
               friction=0.25,
               iterations=99,
               verbose=True):
-        # NOTE: BROKEN
-        if self.id_field:
-            if position in self.gdf.columns.values:
-                df = self.gdf[[self.id_field,
-                               self.value_field,
-                               self.geom_field,
-                               position]].copy()
-                id_field = self.id_field
-            else:
-                df = self.gdf[[self.id_field,
-                               self.value_field,
-                               self.geom_field,
-                               position]].copy()
-                id_field = self.id_field
-        else:
-            if position in self.gdf.columns.values:
-                df = self.gdf[[self.value_field,
-                               self.geom_field,
-                               position]].copy()
-                df['id_field'] = df.index
-                id_field = 'id_field'
-            else:
-                df = self.gdf[[self.value_field,
-                               self.geom_field]].copy()
-                df['id_field'] = df.index
-                id_field = 'id_field'
 
-        # get lengths of shared borders
-        wp = borders_from_dataframe(df, id_field, self.geom_field)
-
-        # get dictionary of perimeters
-        perimeter = df.set_index(id_field)[self.geom_field].length.to_dict()
-
-        # now convert df to geodataframe of centers according to pos.
-        if position in df.columns.values:
-            try:
-                df = gpd.GeoDataFrame(df, geometry=df[position])
-            except:
-                pass
-        elif position.lower() == 'centroid':
-            df = gpd.GeoDataFrame(df, geometry=df[self.geom_field].centroid)
-        elif position.lower() in ['center', 'centre']:
-            df = gpd.GeoDataFrame(df, geometry=df[self.geom_field].envelope.centroid)
-        elif position.lower() in ['representative', 'rep']:
-            df = gpd.GeoDataFrame(df, geometry=df[self.geom_field].representative_point())
-        else:
-            print("Did not recognize position argument, using centroid")
-            df = gpd.GeoDataFrame(df, geometry=df[self.geom_field].centroid)
-
-
-        # work out scale and radii - seems inefficient to deal with the geometries in this way.
-        # no idea how to write this is a PEP8 compliant way.
-        total_dist = np.sum([df.loc[df[id_field] == i,self.geom_field].centroid.tolist()[0].distance(df.loc[df[id_field] == j,self.geom_field].centroid.tolist()[0]) for i in wp.neighbors for j in wp[i]])
-        total_radius = np.sum([np.power(df.loc[df[id_field] == i,self.value_field].values[0]/np.pi,0.5) + np.power(df.loc[df[id_field] == j,self.value_field].values[0]/np.pi,0.5) for i in wp.neighbors for j in wp[i]])
-
-        scale = total_dist / total_radius
-
-        radius = df.set_index(id_field)[self.value_field].apply(lambda x: scale * np.power(x/np.pi, 0.5)).to_dict()
-        widest = radius[max(radius, key=lambda i: radius[i])]
-
-        if verbose:
-            print('Scaling by ', scale, ' widest is ', widest)
-
-        # start the main loop
+        # Get lengths of shared borders.
+        Wp = borders_from_dataframe(self.gdf)
+        perimeter = self.gdf.length
+        
+        # Get polygon centroids
+        df = gpd.GeoDataFrame(self.gdf.drop(columns = self.geom_field), geometry = self.gdf.centroid)
+        
+        # Get total distance
+        focal = (np.stack(Wp.merge(df[self.geom_field].map(np.array).to_frame(),
+                                   left_on='focal',
+                                   right_index=True).sort_index()[self.geom_field]))
+        
+        neighbour = (np.stack(Wp.merge(df[self.geom_field].map(np.array).to_frame(),
+                                       left_on='neighbor',
+                                       right_index=True).sort_index()[self.geom_field]))
+        total_dist = np.sum(paired_distances(focal, neighbour))
+    
+        # Get total radius
+        focal_rad = (Wp.merge(df[[self.value_field]], 
+                              left_on = 'focal', 
+                              right_index=True).sort_index()[self.value_field])
+        neighbour_rad = (Wp.merge(df[[self.value_field]], 
+                                  left_on = 'neighbor', 
+                                  right_index=True).sort_index()[self.value_field])
+        total_radius = np.sum((focal_rad / np.pi)**0.5 + (neighbour_rad / np.pi)**0.5)
+        
+        # Calculate scale
+        scale = total_dist/total_radius
+        
+        # add radii
+        df['radius'] = np.power(df[self.value_field]/np.pi,0.5) * scale
+        WIDEST = df['radius'].max()
+        
+        # algorithm
         for i in range(iterations):
             displacement = 0.0
+            # for each geometry in turn
             for idx, row in df.iterrows():
-                # set up for values for each iteration
                 xrepel = 0.0
                 yrepel = 0.0
                 xattract = 0.0
                 yattract = 0.0
-                closest = widest
-
-                # get neighboring circles
-                distband = row[self.geom_field].centroid.buffer(widest + radius[row[id_field]])
-                neighbors = df[df[self.geom_field].centroid.within(distband)]
-                # remove self from neighbors dataframe
-                neighbors = neighbors[neighbors[id_field] != row[id_field]]
-
-                # for neighbors calculate the attractive and repulsive forces acting
-                if len(neighbors) > 0:
-
-                    for nidx, nrow in neighbors.iterrows():
-                        dist = row[self.geom_field].centroid.distance(nrow[self.geom_field].centroid)
-                        if dist < closest:
-                            closest = dist
-                        overlap = radius[row[id_field]] + radius[nrow[id_field]] - dist
-                        # calculate repelling forces for instersecting circles
-                        if overlap > 0.0:
-                            if dist > 1.0:
-                                xrepel -= overlap * (nrow[self.geom_field].centroid.x - row[self.geom_field].centroid.x) / dist
-                                yrepel -= overlap * (nrow[self.geom_field].centroid.y - row[self.geom_field].centroid.y) / dist
-
-                        # calculate attractive forces for circles
-                        if overlap < 0.0:
-                            try:
-                                overlap = abs(overlap) * wp[row[id_field]][nrow[id_field]]/perimeter[row[id_field]]
-                            except KeyError:
-                                overlap = 0.0
-                            xattract = xattract + overlap * (nrow[self.geom_field].centroid.x - row[self.geom_field].centroid.x) / dist
-                            yattract = yattract + overlap * (nrow[self.geom_field].centroid.y - row[self.geom_field].centroid.y) / dist
-
+                closest = WIDEST
+                
+                # Get neighbours and calculate forces
+                nb = df[df.distance(row[self.geom_field]).between(0, WIDEST + row['radius'], inclusive=False)].copy()
+                if len(nb) > 0:
+                    nb['dist'] = nb[self.geom_field].distance(row[self.geom_field])
+                    closest = WIDEST if nb['dist'].min() > WIDEST else nb['dist'].min()
+                    nb['overlap'] = (nb['radius'] + row['radius']) - nb['dist']
+                    
+                    for idy, rowy in nb.iterrows():
+                        if rowy['overlap'] > 0.0:
+                            xrepel, yrepel = repel(rowy, row, xrepel, yrepel)
+                        else:
+                            xattract, yattract = attract(rowy, idx, Wp, row, perimeter, xattract, yattract)
                 # Calculate combined effect of attraction and repulsion
-                atrdst = np.power(np.power(xattract, 2) + np.power(yattract, 2), 0.5)
-                repdst = np.power(np.power(xrepel, 2) + np.power(yrepel, 2), 0.5)
+                atrdst = (xattract ** 2 + yattract ** 2) **0.5
+                repdst = (xrepel ** 2 + yrepel ** 2) ** 0.5
+                
                 if repdst > closest:
                     xrepel = closest * xrepel / (repdst + 1.0)
                     yrepel = closest * yrepel / (repdst + 1.0)
                     repdst = closest
+                    
                 if repdst > 0:
                     xtotal = (1.0 - ratio) * xrepel + ratio * (repdst * xattract / (atrdst + 1.0))
                     ytotal = (1.0 - ratio) * yrepel + ratio * (repdst * yattract / (atrdst + 1.0))
@@ -260,29 +236,29 @@ class Cartogram:
                         yattract = closest * yattract / (atrdst + 1.0)
                     xtotal = xattract
                     ytotal = yattract
-                displacement += np.power(np.power(xtotal, 2) + np.power(ytotal, 2), 0.5)
-
+                        
+                displacement += (xtotal ** 2 + ytotal **2) ** 0.5
+                
                 # Record the vectors
                 xvector = friction * xtotal
                 yvector = friction * ytotal
-
+                
                 # update position
-                df.loc[idx, self.geom_field] = translate(row[self.geom_field], xoff=xvector, yoff=yvector)
-
+                df.loc[idx, self.geom_field] = translate(row[self.geom_field], xoff = xvector, yoff = yvector)
+            
             displacement = displacement/len(df)
-
             if verbose:
-                print("iter: ",i," displacement: ", displacement)
-
-        df = df.merge(pd.DataFrame(radius.items(), columns=[id_field, 'Radius']),on = id_field)
-        return gpd.GeoDataFrame(df,geometry=[df.loc[b,'geometry'].buffer(df.loc[b,'Radius']) for b in range(len(df))])
-
+                print(f"iter: {i}; displacement: {displacement:.2f}")
+        
+        return gpd.GeoDataFrame(data = df.drop(columns = ['geometry','radius']), geometry = df.apply(lambda x: x['geometry'].buffer(x['radius']), axis=1))
+        
     def dcn(self,
           iterations=99,
           verbose=True):
         
         # If id field is specified get a copy of the geodataframe with just the id,
         # geometry and value fields.
+
         geodf = self.gdf[[self.geom_field, self.value_field, self.id_field]].copy()
 
         # compute sum of value_field and store
@@ -396,6 +372,7 @@ class Cartogram:
             # NB without the -1 index you get a 0 length array at the end.
             repnts = np.split(np.take(upnts,idv,axis=0),cnts.cumsum())[:-1]
             new_geom = [Polygon(p) for p in repnts]
+
             geodf = gpd.GeoDataFrame(geodf[[self.value_field,self.id_field]],geometry=new_geom)
 
             if self.multi:
@@ -410,14 +387,15 @@ class Cartogram:
                 print("iteration: {}; Mean Error: {:.3f}; Max Error: {:.3f}".format(i+1, mean_error, max_error))
 
         return geodf
+        
     @staticmethod
     def __separate(row, geom_field):
         """Helper function for _multi2single.
-
+        
         Args:
             row (pd.Series): row objects from dataframe
             geom_field (str, optional): Field name of geometry column in input gpd.GeoDataFrame, defaults to 'geometry'.
-
+            
         Returns
             Pandas DataFrame
         """
