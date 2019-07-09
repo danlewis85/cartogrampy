@@ -1,2 +1,1 @@
-name='cartogrampy'
-from .components import cartogram
+from .cartogram import Cartogram
