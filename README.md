@@ -1,41 +1,18 @@
 ![cartogrampy logo](https://i.imgur.com/W1XfhLB.png "cartogrampy logo")
-# Cartogrampy 
-Cartogram and related algorithms for GeoPandas
+
+# Cartogrampy
+
+Cartogram and related algorithms for GeoPandas based geometries
 
 ## Installation
 
 ### Using Pip
 
-Prerequisited 
-- python3
-- git
-- make
-
-To install this package using pip run these commands:
-``` sh
-git clone git@github.com:danlewis85/cartogrampy.git
-cd cartogrampy
-make install
-pip install . 
+```sh
+pip install git+ssh://git@github.com/datasciencecampus/readpyne.git@master
 ```
 
-If you know what you are doing and/or want to use `pipenv`,
-then run this sequence of commands:
+### Note:
 
-``` sh
-git clone git@github.com:danlewis85/cartogrampy.git
-cd cartogrampy
-make pipenv
-pipenv install . 
-```
-
-If you are unfortunate enough to exist in Windows,
-run this sequence of commands in your command prompt:
-
-``` sh
-git clone git@github.com:danlewis85/cartogrampy.git
-cd cartogrampy
-pip install --upgrade pipenv 
-pipenv install -r requirements.txt
-pipenv install .
-```
+You will require all the C based dependencies that the python wrappers such as
+pysal and geopandas rely on.
