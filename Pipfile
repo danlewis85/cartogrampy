@@ -1,0 +1,25 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+sphinx = "*"
+sphinxcontrib-fulltoc = "*"
+
+[packages]
+numpy = "*"
+geopandas = "*"
+pysal = "*"
+pandas = "*"
+matplotlib = "*"
+Shapely = "*"
+xlrd = "*"
+descartes = "*"
+PyQt5 = "*"
+shared = {path = "."}
+cartogrampy = {editable = true,path = "."}
+dill = "*"
+
+[requires]
+python_version = "3.7"
