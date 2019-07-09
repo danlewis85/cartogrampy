@@ -19,6 +19,7 @@ descartes = "*"
 PyQt5 = "*"
 shared = {path = "."}
 cartogrampy = {editable = true,path = "."}
+dill = "*"
 
 [requires]
 python_version = "3.7"
